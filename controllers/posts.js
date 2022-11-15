@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
-import { createError } from "../Error/error.js";
+import { createError } from "../error/error.js";
 
 import SocialMedia from "../models/postMessage.js";
 
