@@ -1,20 +1,19 @@
 import mongoose from "mongoose";
 
-const postSchema = mongoose.Schema({
-  title: String,
-  message: String,
-  name: String,
-  creator: String,
-  tags: [String],
-  selectedFile: String,
-  likes: { type: [String], default: [] },
-  comments: { type: [String], default: [] },
-  createdAt: {
-    type: Date,
-    default: new Date(),
+const postSchema = mongoose.Schema(
+  {
+    message: { type: String, min: 3, max: 150 },
+    firstName: String,
+    lastName: String,
+    creator: String,
+    selectedFile: String,
+    profilePics: String,
+    likes: { type: [String], default: [] },
+    comments: { type: [String], default: [] },
   },
-});
+  { timestamps: true }
+);
 
-var SocialMedia = mongoose.model("SocialMedia", postSchema);
+var SocialMediaNew = mongoose.model("SocialMediaNew", postSchema);
 
-export default SocialMedia;
+export default SocialMediaNew;

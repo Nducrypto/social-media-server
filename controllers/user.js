@@ -1,18 +1,19 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-import User from "../models/user.js";
+import UserSocialMedia from "../models/user.js";
 import dotenv from "dotenv";
 import { createError } from "../error/error.js";
 
 dotenv.config();
 
 // SIGNUP
-export const signup = async (req, res) => {
-  const { email, password, firstName, lastName, confirmPassword } = req.body;
+export const signup = async (req, res, next) => {
+  const { email, password, firstName, lastName, confirmPassword, profilePics } =
+    req.body;
 
   try {
-    const existingUser = await User.findOne({ email });
+    const existingUser = await UserSocialMedia.findOne({ email });
 
     if (existingUser) return next(createError(404, "User alraedy exist."));
 
@@ -21,17 +22,19 @@ export const signup = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const result = await User.create({
+    const result = await UserSocialMedia.create({
       email,
       password: hashedPassword,
-      name: `${firstName} ${lastName}`,
+      firstName,
+      lastName,
+      profilePics,
     });
 
     const token = jwt.sign(
-      { email: result, id: result._id },
+      { id: result._id, isAdmin: result.isAdmin },
       process.env.JWT_SECRET,
       {
-        expiresIn: "90000h",
+        expiresIn: "1y",
       }
     );
 
@@ -42,16 +45,16 @@ export const signup = async (req, res) => {
 };
 
 // SIGNIN
-export const signin = async (req, res) => {
-  const { email, password } = req.body;
+export const signin = async (req, res, next) => {
+  const { email } = req.body;
 
   try {
-    const existingUser = await User.findOne({ email });
+    const existingUser = await UserSocialMedia.findOne({ email });
 
     if (!existingUser) return next(createError(404, "User doesn't exist."));
 
     const isPasswordCorrect = await bcrypt.compare(
-      password,
+      req.body.password,
       existingUser.password
     );
 
@@ -59,14 +62,52 @@ export const signin = async (req, res) => {
       return next(createError(404, "Invalid Email or Password."));
 
     const token = jwt.sign(
-      { email: existingUser.email, id: existingUser._id },
+      { isAdmin: existingUser.isAdmin, id: existingUser._id },
       process.env.JWT_SECRET,
 
-      { expiresIn: "90000h" }
+      { expiresIn: "1y" }
     );
+    const { password, ...otherDetails } = existingUser._doc;
 
-    res.status(200).json({ result: existingUser, token });
+    res.status(200).json({ result: { ...otherDetails }, token });
   } catch (err) {
     next(createError(404, "Something went wrong"));
+  }
+};
+
+export const getUsers = async (req, res, next) => {
+  try {
+    const allusers = await UserSocialMedia.find();
+    res.status(200).json(allusers);
+  } catch (error) {
+    next(createError(401, "error making Users request"));
+  }
+};
+
+export const getUserById = async (req, res, next) => {
+  try {
+    const user = await UserSocialMedia.find({ _id: req.params.id });
+    res.status(200).json(user);
+  } catch (err) {
+    next(createError(401, "error making user request"));
+  }
+};
+
+export const updateUser = async (req, res, next) => {
+  try {
+    const user = await UserSocialMedia.findById(req.params.id);
+
+    if (user) {
+      const { email, bio, profilePics, firstName, lastName } = user;
+      user.email = email;
+      user.firstName = req.body.firstName || firstName;
+      user.lastName = req.body.lastName || lastName;
+      user.profilePics = req.body.profilePics || profilePics;
+      user.bio = req.body.bio || bio;
+    }
+    const result = await user.save();
+    res.status(200).json(result);
+  } catch (err) {
+    next(createError(401, "failed to update"));
   }
 };
