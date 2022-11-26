@@ -13,6 +13,6 @@ router.post("/signin", signin);
 router.post("/signup", signup);
 router.get("/", getUsers);
 router.get("/:id", getUserById);
-router.put("/:id", updateUser);
+router.patch("/:id", updateUser);
 
 export default router;

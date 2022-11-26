@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 import UserSocialMedia from "../models/user.js";
+import SocialMediaNew from "../models/postMessage.js";
 import dotenv from "dotenv";
 import { createError } from "../error/error.js";
 
@@ -105,8 +106,27 @@ export const updateUser = async (req, res, next) => {
       user.profilePics = req.body.profilePics || profilePics;
       user.bio = req.body.bio || bio;
     }
-    const result = await user.save();
-    res.status(200).json(result);
+
+    const updateUser = await user.save();
+
+    const token = jwt.sign(
+      { isAdmin: user.isAdmin, id: user._id },
+      process.env.JWT_SECRET,
+
+      { expiresIn: "1y" }
+    );
+    const posts = await SocialMediaNew.updateMany(
+      { creator: req.params.id },
+      {
+        $set: {
+          firstName: req.body.firstName || user.firstName,
+          lastName: req.body.lastName || user.lastName,
+          profilePics: req.body.profilePics || user.profilePics,
+        },
+      },
+      { new: true }
+    );
+    res.status(200).json({ result: updateUser, token });
   } catch (err) {
     next(createError(401, "failed to update"));
   }
