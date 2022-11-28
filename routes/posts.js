@@ -23,7 +23,7 @@ router.get("/:id", getPost);
 router.post("/", verifyUser, createPost);
 router.patch("/:id", verifyUser, updatePost);
 router.delete("/:id", verifyUser, deletePost);
-router.patch("/:id/likePost", verifyUser, likePost);
+router.patch("/likePost/:id", verifyUser, likePost);
 router.post("/:id/commentPost", commentPost);
 
 export default router;

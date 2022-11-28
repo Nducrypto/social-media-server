@@ -45,7 +45,6 @@ export const getPost = async (req, res, next) => {
 // ==================== CREATEPOST
 export const createPost = async (req, res) => {
   const post = req.body;
-
   const newPost = new SocialMediaNew(post);
 
   try {
@@ -73,7 +72,7 @@ export const deletePost = async (req, res, next) => {
 export const likePost = async (req, res, next) => {
   const { id } = req.params;
 
-  if (!req.userId) {
+  if (!req.body.userId) {
     return next(createError(400, "Unauthenticated"));
   }
 
@@ -82,13 +81,13 @@ export const likePost = async (req, res, next) => {
 
   const post = await SocialMediaNew.findById(id);
 
-  const index = post.likes.findIndex((id) => id === String(req.userId));
+  const index = post.likes.findIndex((id) => id === String(req.body.userId));
 
   // dis is if user wants to like a post, its set to -1 cos he hasnt liked
   if (index === -1) {
-    post.likes.push(req.userId);
+    post.likes.push(req.body.userId);
   } else {
-    post.likes = post.likes.filter((id) => id !== String(req.userId));
+    post.likes = post.likes.filter((id) => id !== String(req.body.userId));
   }
 
   const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
