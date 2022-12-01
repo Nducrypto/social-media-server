@@ -131,3 +131,29 @@ export const updateUser = async (req, res, next) => {
     next(createError(401, "failed to update"));
   }
 };
+
+export const changePassword = async (req, res, next) => {
+  const { oldPassword, password } = req.body;
+
+  try {
+    const existingUser = await UserSocialMedia.findById(req.params.id);
+
+    if (!existingUser)
+      return next(createError(401, "User not found please sign in"));
+
+    const PasswordCorrect = await bcrypt.compare(
+      oldPassword,
+      existingUser.password
+    );
+    if (!PasswordCorrect) return next(createError(404, "Password dont match."));
+
+    if (PasswordCorrect && existingUser) {
+      existingUser.password = password;
+    }
+    await existingUser.save();
+
+    res.status(200).json("password changed successfully");
+  } catch (err) {
+    next(createError(401, "failed to update"));
+  }
+};
