@@ -76,6 +76,7 @@ export const signin = async (req, res, next) => {
   }
 };
 
+// ======GET_ALL
 export const getUsers = async (req, res, next) => {
   try {
     const allusers = await UserSocialMedia.find();
@@ -85,6 +86,7 @@ export const getUsers = async (req, res, next) => {
   }
 };
 
+// ======GET_BY_ID
 export const getUserById = async (req, res, next) => {
   try {
     const user = await UserSocialMedia.find({ _id: req.params.id });
@@ -94,6 +96,7 @@ export const getUserById = async (req, res, next) => {
   }
 };
 
+// =====UPDATE_USER
 export const updateUser = async (req, res, next) => {
   try {
     const user = await UserSocialMedia.findById(req.params.id);
@@ -132,6 +135,8 @@ export const updateUser = async (req, res, next) => {
   }
 };
 
+// ===CHANGE_PASSWORD
+
 export const changePassword = async (req, res, next) => {
   const { oldPassword, password } = req.body;
 
@@ -157,3 +162,5 @@ export const changePassword = async (req, res, next) => {
     next(createError(401, "failed to update"));
   }
 };
+
+// =====RESET_PASSWORD
