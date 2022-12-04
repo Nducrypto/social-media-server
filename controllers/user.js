@@ -138,19 +138,22 @@ export const updateUser = async (req, res, next) => {
 // ===CHANGE_PASSWORD
 
 export const changePassword = async (req, res, next) => {
-  const { oldPassword, password } = req.body;
+  const { oldPassword, password, confirmPassword } = req.body;
 
   try {
     const existingUser = await UserSocialMedia.findById(req.params.id);
 
     if (!existingUser)
       return next(createError(401, "User not found please sign in"));
+    if (password !== confirmPassword)
+      return next(createError(401, "Password Doesn't Match"));
 
     const PasswordCorrect = await bcrypt.compare(
       oldPassword,
       existingUser.password
     );
-    if (!PasswordCorrect) return next(createError(404, "Password dont match."));
+
+    if (!PasswordCorrect) return next(createError(404, "Password Not Found."));
 
     if (PasswordCorrect && existingUser) {
       existingUser.password = password;
