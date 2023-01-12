@@ -3,17 +3,21 @@ import bcrypt from "bcryptjs";
 
 const userSchema = mongoose.Schema(
   {
-    firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
+    firstName: { type: String },
+    lastName: { type: String },
     email: {
       type: String,
       required: true,
       unique: true,
     },
-    password: { type: String, required: true },
-    profilePics: { type: String, required: true },
+    password: { type: String },
+    profilePics: { type: String },
     bio: { type: String, min: 3, max: 40 },
     isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    isSuspended: {
       type: Boolean,
       default: false,
     },
@@ -27,7 +31,7 @@ userSchema.pre("save", async function (next) {
   }
 
   // Hash password
-  const hashedPassword = await bcrypt.hash(this.password, 12);
+  let hashedPassword = await bcrypt.hash(this.password, 10);
   this.password = hashedPassword;
   next();
 });

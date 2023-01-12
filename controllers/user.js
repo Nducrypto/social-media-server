@@ -17,22 +17,25 @@ export const signup = async (req, res, next) => {
     const existingUser = await UserSocialMedia.findOne({ email });
 
     if (existingUser) return next(createError(404, "User alraedy exist."));
-
     if (password !== confirmPassword)
-      return next(createError(404, "Passwords don't match"));
+      return next(createError(404, "Password Don't Match."));
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    // let hashedPassword = await bcrypt.hash(req.body.password, 10);
 
     const result = await UserSocialMedia.create({
       email,
-      password: hashedPassword,
+      password,
       firstName,
       lastName,
       profilePics,
     });
 
     const token = jwt.sign(
-      { id: result._id, isAdmin: result.isAdmin },
+      {
+        id: result._id,
+        isAdmin: result.isAdmin,
+        isSuspended: result.isSuspended,
+      },
       process.env.JWT_SECRET,
       {
         expiresIn: "1y",
@@ -50,25 +53,30 @@ export const signin = async (req, res, next) => {
   const { email } = req.body;
 
   try {
-    const existingUser = await UserSocialMedia.findOne({ email });
+    const user = await UserSocialMedia.findOne({ email });
 
-    if (!existingUser) return next(createError(404, "User doesn't exist."));
+    if (!user) return next(createError(404, "User doesn't exist."));
 
-    const isPasswordCorrect = await bcrypt.compare(
-      req.body.password,
-      existingUser.password
+    const checkIfPasswordIsCorrect = await bcrypt.compare(
+      req.body.password.toString(),
+      user.password
     );
 
-    if (!isPasswordCorrect)
+    if (!checkIfPasswordIsCorrect)
       return next(createError(404, "Invalid Email or Password."));
 
     const token = jwt.sign(
-      { isAdmin: existingUser.isAdmin, id: existingUser._id },
+      {
+        isAdmin: user.isAdmin,
+        id: user._id,
+        isSuspended: user.isSuspended,
+      },
       process.env.JWT_SECRET,
 
       { expiresIn: "1y" }
     );
-    const { password, ...otherDetails } = existingUser._doc;
+
+    const { password, ...otherDetails } = user._doc;
 
     res.status(200).json({ result: { ...otherDetails }, token });
   } catch (err) {
@@ -102,22 +110,34 @@ export const updateUser = async (req, res, next) => {
     const user = await UserSocialMedia.findById(req.params.id);
 
     if (user) {
-      const { email, bio, profilePics, firstName, lastName } = user;
+      const {
+        email,
+        bio,
+        profilePics,
+        firstName,
+        lastName,
+        isAdmin,
+        isSuspended,
+      } = user;
       user.email = email;
       user.firstName = req.body.firstName || firstName;
       user.lastName = req.body.lastName || lastName;
       user.profilePics = req.body.profilePics || profilePics;
       user.bio = req.body.bio || bio;
+      user.isAdmin = req.body.isAdmin || isAdmin;
+      user.isSuspended = req.body.isSuspended || isSuspended;
     }
 
     const updateUser = await user.save();
-
+    console.log(updateUser);
     const token = jwt.sign(
       { isAdmin: user.isAdmin, id: user._id },
       process.env.JWT_SECRET,
 
       { expiresIn: "1y" }
     );
+
+    // UPDATING PROFILE INFO FOR ALL POST MADE BY THE CREATOR
     const posts = await SocialMediaNew.updateMany(
       { creator: req.params.id },
       {
@@ -130,6 +150,60 @@ export const updateUser = async (req, res, next) => {
       { new: true }
     );
     res.status(200).json({ result: updateUser, token });
+  } catch (err) {
+    next(createError(401, "failed to update"));
+  }
+};
+
+export const updateUserAccess = async (req, res, next) => {
+  try {
+    const user = await UserSocialMedia.findById(req.params.id);
+
+    if (user) {
+      const {
+        email,
+        bio,
+        profilePics,
+        firstName,
+        lastName,
+        isAdmin,
+        isSuspended,
+      } = user;
+      user.isSuspended =
+        req.body.isSuspended === "true"
+          ? true
+          : req.body.isSuspended === "false"
+          ? false
+          : req.body.isAdmin === "true"
+          ? false
+          : isSuspended;
+      user.email = email;
+      user.firstName = firstName;
+      user.lastName = lastName;
+      user.profilePics = profilePics;
+      user.bio = bio;
+      user.isAdmin =
+        req.body.isSuspended === "true"
+          ? false
+          : req.body.isAdmin === "true"
+          ? true
+          : req.body.isAdmin === "false"
+          ? false
+          : isAdmin;
+    }
+
+    const updateUserAccess = await user.save();
+    // console.log(updateUserAccess);
+    // const token = jwt.sign(
+    //   { isAdmin: user.isAdmin, id: user._id },
+    //   process.env.JWT_SECRET,
+
+    //   { expiresIn: "1y" }
+    // );
+
+    // UPDATING PROFILE INFO FOR ALL POST MADE BY THE CREATOR
+
+    res.status(200).json({ result: updateUserAccess });
   } catch (err) {
     next(createError(401, "failed to update"));
   }
