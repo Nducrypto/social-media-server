@@ -2,7 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import { createError } from "../error/error.js";
 
-import SocialMediaNew from "../models/postMessage.js";
+import { SocialMediaNew } from "../models/postMessage.js";
 
 const router = express.Router();
 
@@ -60,8 +60,7 @@ export const createPost = async (req, res) => {
 export const deletePost = async (req, res, next) => {
   const { id } = req.params;
 
-  if (!mongoose.Types.ObjectId.isValid(id))
-    return next(createError(400, `No post with id: ${id}`));
+  if (!id) return next(createError(400, `No post with id: ${id}`));
 
   await SocialMediaNew.findByIdAndRemove(id);
 
@@ -71,30 +70,30 @@ export const deletePost = async (req, res, next) => {
 //=================== LIKEPOST
 export const likePost = async (req, res, next) => {
   const { id } = req.params;
+  const { userId } = req.body;
 
-  if (!req.body.userId) {
-    return next(createError(400, "Unauthenticated"));
+  try {
+    if (!userId) {
+      return next(createError(400, "Unauthenticated"));
+    }
+
+    const post = await SocialMediaNew.findById(id);
+    const index = post.likes.indexOf(userId);
+
+    if (index === -1) {
+      post.likes.push(userId);
+    } else {
+      post.likes.splice(index, 1);
+    }
+
+    const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
+      new: true,
+    });
+
+    res.status(200).json(updatedPost);
+  } catch (err) {
+    next(createError(400, "Failed to get post by creator"));
   }
-
-  if (!mongoose.Types.ObjectId.isValid(id))
-    return next(createError(400, `No post with id: ${id}`));
-
-  const post = await SocialMediaNew.findById(id);
-
-  const index = post.likes.findIndex((id) => id === String(req.body.userId));
-
-  // dis is if user wants to like a post, its set to -1 cos he hasnt liked
-  if (index === -1) {
-    post.likes.push(req.body.userId);
-  } else {
-    post.likes = post.likes.filter((id) => id !== String(req.body.userId));
-  }
-
-  const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
-    new: true,
-  });
-
-  res.status(200).json(updatedPost);
 };
 
 // ===========================UPDATEPOST
@@ -102,8 +101,7 @@ export const updatePost = async (req, res, next) => {
   const { id: _id } = req.params;
   const post = req.body;
 
-  if (!mongoose.Types.ObjectId.isValid(_id))
-    return next(createError(400, `No post with id: ${id}`));
+  if (!post) return next(createError(400, `No post found`));
 
   const updatedPost = await SocialMediaNew.findByIdAndUpdate(_id, post, {
     new: true,
@@ -141,19 +139,141 @@ export const getPostsByCreator = async (req, res, next) => {
   }
 };
 
+// commentPost function using mongoDb method
+export const comment = async (req, res) => {
+  const { id } = req.params;
+  const {
+    firstName,
+    lastName,
+    comment,
+    parentCommentId,
+    parentReplyId,
+    // currentDepth = 0,
+  } = req.body;
+  try {
+    const post = await SocialMediaNew.findById(id);
+
+    if (parentCommentId) {
+      const parentComment = post.comments.id(parentCommentId);
+
+      if (!parentComment) {
+        return res.status(404).json({ message: "Parent comment not found" });
+      }
+
+      if (parentReplyId) {
+        const parentReply = parentComment.replies.id(parentReplyId);
+        console.log(parentReply);
+        if (!parentReply) {
+          return res.status(404).json({ message: "Parent reply not found" });
+        }
+
+        // Add the sub-reply to the parent reply's subReplies array
+        parentReply.subReply.push({
+          text: comment,
+          author: `${firstName} ${lastName}`,
+        });
+        await post.save();
+      } else {
+        // If no parentReplyId, add the reply to the parent comment
+        parentComment.replies.push({
+          text: comment,
+          author: `${firstName} ${lastName}`,
+          subReply: [], // Initialize the subReply array
+        });
+        await post.save();
+      }
+    } else {
+      const newComment = {
+        text: comment,
+        author: `${firstName} ${lastName}`,
+        parentComment: parentCommentId || null,
+      };
+
+      post.comments.push(newComment);
+      await post.save();
+    }
+
+    // Save the changes to the post after adding the sub-reply
+
+    const updatedPost = await SocialMediaNew.findById(id);
+    res.json(updatedPost);
+  } catch (error) {
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+// Seond commentPost function using recursion which is findComment function
 export const commentPost = async (req, res) => {
   const { id } = req.params;
-  const { value } = req.body;
+  const { firstName, lastName, comment, parentCommentId, parentReplyId } =
+    req.body;
 
-  const post = await SocialMediaNew.findById(id);
+  try {
+    const post = await SocialMediaNew.findById(id);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+    if (parentCommentId) {
+      // Handle nested Comments or Replies within comments
+      const { parentComment, reply } = findComment(
+        post.comments,
+        parentCommentId,
+        parentReplyId
+      );
 
-  post.comments.push(value);
+      if (parentReplyId) {
+        // Handle replying to a sub-reply within a comment
+        if (!reply) {
+          return res.status(404).json({ message: "Parent reply not found" });
+        }
+        // If there is a reply add the reply to the replies comment
+        reply.subReply.push({
+          text: comment,
+          author: `${firstName} ${lastName}`,
+        });
+        await post.save();
+      } else {
+        if (!parentComment) {
+          return res.status(404).json({ message: "Parent reply not found" });
+        }
+        // If no reply add the reply to the parent comment
+        parentComment.replies.push({
+          text: comment,
+          author: `${firstName} ${lastName}`,
+        });
+        await post.save();
+      }
+    } else {
+      // If no parentCommentId or parentReplyId, add the comment to the post's comments array
+      post.comments.push({ text: comment, author: `${firstName} ${lastName}` });
+      await post.save();
+    }
+    const updatedPost = await SocialMediaNew.findById(id);
+    res.json(updatedPost);
+  } catch (error) {
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
 
-  const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
-    new: true,
-  });
+// Helper Recursive function to find comment or Replies by its ID
+const findComment = (comments, parentCommentId, parentReplyId) => {
+  let reply = null;
+  let parentComment = null;
+  for (const comment of comments) {
+    if (comment._id.toString() === parentCommentId) {
+      if (!parentReplyId) {
+        return { parentComment: comment, reply: null }; // Return the comment if commentId matches and parentReplyId is not provided
+      } else {
+        const findReplyToComment = findComment(comment.replies, parentReplyId); // Recursively search for the nested comment
 
-  res.json(updatedPost);
+        return {
+          parentComment: null,
+          reply: findReplyToComment.parentComment,
+        };
+      }
+    }
+  }
+  return { parentComment, reply }; // CommentId not found, return null
 };
 
 export default router;

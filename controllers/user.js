@@ -1,10 +1,12 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 import UserSocialMedia from "../models/user.js";
-import SocialMediaNew from "../models/postMessage.js";
+import { SocialMediaNew } from "../models/postMessage.js";
 import dotenv from "dotenv";
 import { createError } from "../error/error.js";
+import { mergeSort } from "../sorting/sorting.js";
 
 dotenv.config();
 
@@ -97,7 +99,8 @@ export const getUsers = async (req, res, next) => {
 // ======GET_BY_ID
 export const getUserById = async (req, res, next) => {
   try {
-    const user = await UserSocialMedia.find({ _id: req.params.id });
+    const user = await UserSocialMedia.findById({ _id: req.params.id });
+
     res.status(200).json(user);
   } catch (err) {
     next(createError(401, "error making user request"));
@@ -107,29 +110,34 @@ export const getUserById = async (req, res, next) => {
 // =====UPDATE_USER
 export const updateUser = async (req, res, next) => {
   try {
-    const user = await UserSocialMedia.findById(req.params.id);
+    const { id } = req.params;
+    const {
+      email,
+      bio,
+      profilePics,
+      firstName,
+      lastName,
+      isAdmin,
+      isSuspended,
+    } = req.body;
 
-    if (user) {
-      const {
-        email,
-        bio,
-        profilePics,
-        firstName,
-        lastName,
-        isAdmin,
-        isSuspended,
-      } = user;
-      user.email = email;
-      user.firstName = req.body.firstName || firstName;
-      user.lastName = req.body.lastName || lastName;
-      user.profilePics = req.body.profilePics || profilePics;
-      user.bio = req.body.bio || bio;
-      user.isAdmin = req.body.isAdmin || isAdmin;
-      user.isSuspended = req.body.isSuspended || isSuspended;
+    // Find the user and handle user not found
+    const user = await UserSocialMedia.findById(id);
+    if (!user) {
+      return next(createError(404, "User not found"));
     }
 
+    // Update the user object
+    user.email = email || user.email;
+    user.firstName = firstName || user.firstName;
+    user.lastName = lastName || user.lastName;
+    user.profilePics = profilePics || user.profilePics;
+    user.bio = bio || user.bio;
+    user.isAdmin = isAdmin || user.isAdmin;
+    user.isSuspended = isSuspended || user.isSuspended;
+
     const updateUser = await user.save();
-    console.log(updateUser);
+
     const token = jwt.sign(
       { isAdmin: user.isAdmin, id: user._id },
       process.env.JWT_SECRET,
@@ -139,7 +147,7 @@ export const updateUser = async (req, res, next) => {
 
     // UPDATING PROFILE INFO FOR ALL POST MADE BY THE CREATOR
     const posts = await SocialMediaNew.updateMany(
-      { creator: req.params.id },
+      { creator: id },
       {
         $set: {
           firstName: req.body.firstName || user.firstName,
@@ -158,42 +166,35 @@ export const updateUser = async (req, res, next) => {
 export const updateUserAccess = async (req, res, next) => {
   try {
     const user = await UserSocialMedia.findById(req.params.id);
+    if (!user) {
+      next(createError(401, "user not found"));
+    }
+    // Validate input data and set defaults
+    const isSuspended = req.body.isSuspended === "true" || false;
+    const isAdmin = req.body.isAdmin === "true" || false;
 
-    if (user) {
-      const {
-        email,
-        bio,
-        profilePics,
-        firstName,
-        lastName,
-        isAdmin,
-        isSuspended,
-      } = user;
-      user.isSuspended =
-        req.body.isSuspended === "true"
-          ? true
-          : req.body.isSuspended === "false"
-          ? false
-          : req.body.isAdmin === "true"
-          ? false
-          : isSuspended;
-      user.email = email;
-      user.firstName = firstName;
-      user.lastName = lastName;
-      user.profilePics = profilePics;
-      user.bio = bio;
-      user.isAdmin =
-        req.body.isSuspended === "true"
-          ? false
-          : req.body.isAdmin === "true"
-          ? true
-          : req.body.isAdmin === "false"
-          ? false
-          : isAdmin;
+    // If user is suspended, make sure they are not an admin
+    user.isSuspended = isSuspended;
+    user.isAdmin = isSuspended ? false : isAdmin;
+    // Update other fields if provided
+    if (req.body.email) {
+      user.email = req.body.email;
+    }
+    if (req.body.firstName) {
+      user.firstName = req.body.firstName;
+    }
+    if (req.body.lastName) {
+      user.lastName = req.body.lastName;
+    }
+    if (req.body.profilePics) {
+      user.profilePics = req.body.profilePics;
+    }
+    if (req.body.bio) {
+      user.bio = req.body.bio;
     }
 
     const updateUserAccess = await user.save();
-    // console.log(updateUserAccess);
+
     // const token = jwt.sign(
     //   { isAdmin: user.isAdmin, id: user._id },
     //   process.env.JWT_SECRET,
@@ -237,6 +238,54 @@ export const changePassword = async (req, res, next) => {
     res.status(200).json("password changed successfully");
   } catch (err) {
     next(createError(401, "failed to update"));
+  }
+};
+
+// ====followers====
+export const followers = async (req, res, next) => {
+  try {
+    const { creator } = req.params;
+    let user = await UserSocialMedia.findById(creator);
+    if (!user) {
+      next(createError(401, "user not found"));
+    }
+    const followersIds = user.followers.map((id) =>
+      mongoose.Types.ObjectId(id)
+    );
+    //  import mergeSort from sorting.js
+    const sortedFollowers = mergeSort(followersIds);
+
+    // Implement binary search
+    const binarySearch = () => {
+      let left = 0;
+      let right = sortedFollowers.length - 1;
+
+      while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        if (
+          sortedFollowers[mid].toString() === req.body.followerId.toString()
+        ) {
+          return mid; // Return the index of the target
+        } else if (sortedFollowers[mid] < req.body.followerId) {
+          left = mid + 1;
+        } else {
+          right = mid - 1;
+        }
+      }
+      return -1; // Return -1 if the target is not found
+    };
+    const index = binarySearch();
+
+    if (index === -1) {
+      user.followers.push(req.body.followerId);
+    } else {
+      user.followers.splice(index, 1);
+    }
+    const update = await user.save();
+
+    res.status(200).json(update);
+  } catch (err) {
+    next(createError(401, "failed to Follow"));
   }
 };
 

@@ -13,6 +13,7 @@ const userSchema = mongoose.Schema(
     password: { type: String },
     profilePics: { type: String },
     bio: { type: String, min: 3, max: 40 },
+    followers: { type: [String], default: [] },
     isAdmin: {
       type: Boolean,
       default: false,

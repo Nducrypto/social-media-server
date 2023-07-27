@@ -9,6 +9,7 @@ import {
   updateUser,
   changePassword,
   updateUserAccess,
+  followers,
 } from "../controllers/user.js";
 import { verifyAdmin, verifyUserId } from "../middleware/auth.js";
 
@@ -19,5 +20,6 @@ router.get("/:id", getUserById);
 router.patch("/:id", verifyUserId, updateUser);
 router.patch("/access/:id", verifyAdmin, updateUserAccess);
 router.patch("/find/:id", verifyUserId, changePassword);
+router.patch("/followers/:creator", followers);
 
 export default router;
