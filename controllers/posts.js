@@ -151,20 +151,23 @@ export const comment = async (req, res) => {
     // currentDepth = 0,
   } = req.body;
   try {
+    if (!req.body) {
+      next(createError(400, "Please make a cooment"));
+    }
     const post = await SocialMediaNew.findById(id);
 
     if (parentCommentId) {
       const parentComment = post.comments.id(parentCommentId);
 
       if (!parentComment) {
-        return res.status(404).json({ message: "Parent comment not found" });
+        next(createError(400, "Parent comment not found"));
       }
 
       if (parentReplyId) {
         const parentReply = parentComment.replies.id(parentReplyId);
-        console.log(parentReply);
+
         if (!parentReply) {
-          return res.status(404).json({ message: "Parent reply not found" });
+          next(createError(400, "Parent reply not found"));
         }
 
         // Add the sub-reply to the parent reply's subReplies array
@@ -202,16 +205,19 @@ export const comment = async (req, res) => {
   }
 };
 
-// Seond commentPost function using recursion which is findComment function
+// Second commentPost function using recursion which is findComment function
 export const commentPost = async (req, res) => {
   const { id } = req.params;
   const { firstName, lastName, comment, parentCommentId, parentReplyId } =
     req.body;
 
   try {
+    if (!req.body) {
+      next(createError(400, "Please make a cooment"));
+    }
     const post = await SocialMediaNew.findById(id);
     if (!post) {
-      return res.status(404).json({ message: "Post not found" });
+      next(createError(400, "Post not found"));
     }
     if (parentCommentId) {
       // Handle nested Comments or Replies within comments
@@ -224,9 +230,10 @@ export const commentPost = async (req, res) => {
       if (parentReplyId) {
         // Handle replying to a sub-reply within a comment
         if (!reply) {
-          return res.status(404).json({ message: "Parent reply not found" });
+          next(createError(400, "Parent reply not found"));
         }
-        // If there is a reply add the reply to the replies comment
+        // If there is a reply add req.body to the Subreplies array
+
         reply.subReply.push({
           text: comment,
           author: `${firstName} ${lastName}`,
@@ -234,7 +241,7 @@ export const commentPost = async (req, res) => {
         await post.save();
       } else {
         if (!parentComment) {
-          return res.status(404).json({ message: "Parent reply not found" });
+          next(createError(400, "Parent reply not found"));
         }
         // If no reply add the reply to the parent comment
         parentComment.replies.push({
