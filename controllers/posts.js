@@ -29,19 +29,6 @@ export const getPosts = async (req, res, next) => {
   }
 };
 
-//===== GETPOST
-export const getPost = async (req, res, next) => {
-  const { id } = req.params;
-
-  try {
-    const post = await SocialMediaNew.findById(id);
-
-    res.status(201).json(post);
-  } catch (err) {
-    next(createError(400, "Failed to make api getid request"));
-  }
-};
-
 // ==================== CREATEPOST
 export const createPost = async (req, res) => {
   const post = req.body;
@@ -123,19 +110,6 @@ export const getPostsBySearch = async (req, res, next) => {
     res.json(posts);
   } catch (err) {
     next(createError(400, "Failed to get post by search"));
-  }
-};
-
-//=== GETPOSTBY CREATOR
-export const getPostsByCreator = async (req, res, next) => {
-  const { creator } = req.query;
-
-  try {
-    const posts = await SocialMediaNew.find({ creator }).sort({ _id: -1 });
-
-    res.json(posts);
-  } catch (err) {
-    next(createError(400, "Failed to get post by creator"));
   }
 };
 
