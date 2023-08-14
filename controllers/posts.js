@@ -1,13 +1,19 @@
-import express from "express";
-import mongoose from "mongoose";
 import { createError } from "../error/error.js";
+import dotenv from "dotenv";
 
-import { SocialMediaNew } from "../models/postMessage.js";
+import { SocialMediaNew, Comment } from "../models/postMessage.js";
+import UserSocialMedia from "../models/user.js";
 
-const router = express.Router();
+import { v2 as cloudinary } from "cloudinary";
 
+dotenv.config();
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 //=====GETPOSTs
-export const getPosts = async (req, res, next) => {
+export const GetPosts = async (req, res, next) => {
   const { page } = req.query;
   try {
     const LIMIT = 5;
@@ -30,12 +36,23 @@ export const getPosts = async (req, res, next) => {
 };
 
 // ==================== CREATEPOST
-export const createPost = async (req, res) => {
-  const post = req.body;
-  const newPost = new SocialMediaNew(post);
+export const CreatePost = async (req, res, next) => {
+  const { message, selectedFile, firstName, lastName, creator } = req.body;
 
   try {
-    await newPost.save();
+    const user = await UserSocialMedia.findById(creator);
+    const postPhotoUrl = selectedFile
+      ? await cloudinary.uploader.upload(selectedFile)
+      : null;
+
+    const newPost = await SocialMediaNew.create({
+      message,
+      selectedFile: postPhotoUrl.url ?? null,
+      profilePics: user.profilePics ?? null,
+      firstName,
+      lastName,
+      creator,
+    });
 
     res.status(201).json(newPost);
   } catch (err) {
@@ -44,18 +61,26 @@ export const createPost = async (req, res) => {
 };
 
 //===================== DELELE POST
-export const deletePost = async (req, res, next) => {
+export const DeletePost = async (req, res, next) => {
   const { id } = req.params;
 
   if (!id) return next(createError(400, `No post with id: ${id}`));
 
-  await SocialMediaNew.findByIdAndRemove(id);
+  const removePost = await SocialMediaNew.findByIdAndRemove(id);
+
+  if (removePost.selectedFile) {
+    const deleteImageFromCloudinary = removePost.selectedFile
+      .split("/")
+      .pop()
+      .split(".")[0];
+    await cloudinary.uploader.destroy(deleteImageFromCloudinary);
+  }
 
   res.json({ message: "Post deleted successfully." });
 };
 
 //=================== LIKEPOST
-export const likePost = async (req, res, next) => {
+export const LikePost = async (req, res, next) => {
   const { id } = req.params;
   const { userId } = req.body;
 
@@ -84,21 +109,41 @@ export const likePost = async (req, res, next) => {
 };
 
 // ===========================UPDATEPOST
-export const updatePost = async (req, res, next) => {
+export const UpdatePost = async (req, res, next) => {
   const { id: _id } = req.params;
-  const post = req.body;
+  const { selectedFile, ...postUpdates } = req.body;
+  console.log(postUpdates);
+  try {
+    const existingPost = await SocialMediaNew.findById(_id);
 
-  if (!post) return next(createError(400, `No post found`));
+    if (!existingPost) {
+      return next(createError(404, `Post not found`));
+    }
 
-  const updatedPost = await SocialMediaNew.findByIdAndUpdate(_id, post, {
-    new: true,
-  });
+    if (selectedFile !== existingPost.selectedFile) {
+      const postPhotoUrl = await cloudinary.uploader.upload(selectedFile);
+      const publicId = existingPost.selectedFile.split("/").pop().split(".")[0];
+      await cloudinary.uploader.destroy(publicId);
+      existingPost.selectedFile = postPhotoUrl.url;
+    }
 
-  res.json(updatedPost);
+    Object.assign(existingPost, postUpdates);
+    const updatedPost = await SocialMediaNew.findByIdAndUpdate(
+      _id,
+      existingPost,
+      {
+        new: true,
+      }
+    );
+
+    res.json(updatedPost);
+  } catch (err) {
+    next(createError(400, "Failed to update post"));
+  }
 };
 
 //== GETPOSTBYSEARCH
-export const getPostsBySearch = async (req, res, next) => {
+export const GetPostsBySearch = async (req, res, next) => {
   const { searchQuery } = req.query;
 
   try {
@@ -179,82 +224,119 @@ export const comment = async (req, res) => {
   }
 };
 
-// Second commentPost function using recursion which is findComment function
-export const commentPost = async (req, res) => {
+export const CommentPost = async (req, res, next) => {
   const { id } = req.params;
-  const { firstName, lastName, comment, parentCommentId, parentReplyId } =
-    req.body;
+  const { firstName, lastName, comment, parentCommentId } = req.body;
 
   try {
     if (!req.body) {
-      next(createError(400, "Please make a cooment"));
+      throw createError(400, "Please make a comment");
     }
+
     const post = await SocialMediaNew.findById(id);
     if (!post) {
       next(createError(400, "Post not found"));
     }
+
+    const newComment = new Comment({
+      text: comment,
+      userName: `${firstName} ${lastName}`,
+      comments: [],
+    });
+
     if (parentCommentId) {
-      // Handle nested Comments or Replies within comments
-      const { parentComment, reply } = findComment(
+      const commentUpdated = await updateCommentRecursively(
         post.comments,
         parentCommentId,
-        parentReplyId
+        newComment
       );
 
-      if (parentReplyId) {
-        // Handle replying to a sub-reply within a comment
-        if (!reply) {
-          next(createError(400, "Parent reply not found"));
-        }
-        // If there is a reply add req.body to the Subreplies array
-
-        reply.subReply.push({
-          text: comment,
-          author: `${firstName} ${lastName}`,
-        });
-        await post.save();
-      } else {
-        if (!parentComment) {
-          next(createError(400, "Parent reply not found"));
-        }
-        // If no reply add the reply to the parent comment
-        parentComment.replies.push({
-          text: comment,
-          author: `${firstName} ${lastName}`,
-        });
-        await post.save();
+      if (!commentUpdated) {
+        next(createError(400, "Parent comment or reply not found"));
       }
+      await post.save();
     } else {
-      // If no parentCommentId or parentReplyId, add the comment to the post's comments array
-      post.comments.push({ text: comment, author: `${firstName} ${lastName}` });
+      post.comments.push(newComment);
       await post.save();
     }
-    const updatedPost = await SocialMediaNew.findById(id);
-    res.json(updatedPost);
+    const updatePostAfterDelete = await SocialMediaNew.findByIdAndUpdate(
+      id,
+      post,
+      {
+        new: true,
+      }
+    );
+
+    res.json(updatePostAfterDelete);
   } catch (error) {
-    res.status(500).json({ message: "Something went wrong" });
+    next(createError(400, "Failed to comment"));
   }
 };
 
-// Helper Recursive function to find comment or Replies by its ID
-const findComment = (comments, parentCommentId, parentReplyId) => {
-  let reply = null;
-  let parentComment = null;
+const updateCommentRecursively = (comments, commentId, newComment) => {
   for (const comment of comments) {
-    if (comment._id.toString() === parentCommentId) {
-      if (!parentReplyId) {
-        return { parentComment: comment, reply: null }; // Return the comment if commentId matches and parentReplyId is not provided
-      } else {
-        const findReplyToComment = findComment(comment.replies, parentReplyId); // Recursively search for the nested comment
+    if (comment._id.toString() === commentId) {
+      comment.comments.push(newComment);
 
-        return {
-          parentComment: null,
-          reply: findReplyToComment.parentComment,
-        };
+      return true;
+    } else {
+      const updated = updateCommentRecursively(
+        comment.comments,
+        commentId,
+        newComment
+      );
+      if (updated) {
+        return true;
       }
     }
   }
-  return { parentComment, reply }; // CommentId not found, return null
+  return false;
 };
 
-export default router;
+export const DeleteComment = async (req, res, next) => {
+  const { id } = req.params;
+  const { commentId } = req.body;
+
+  try {
+    if (!req.body) {
+      throw createError(400, "Please make a comment");
+    }
+
+    const post = await SocialMediaNew.findById(id);
+    if (!post) {
+      next(createError(400, "Post not found"));
+    }
+
+    const commentToDelete = await removeComment(post.comments, commentId);
+
+    if (!commentToDelete) {
+      next(createError(400, "comment not found"));
+    }
+    post.comments = commentToDelete;
+
+    const updatePostAfterDelete = await SocialMediaNew.findByIdAndUpdate(
+      id,
+      post,
+      {
+        new: true,
+      }
+    );
+
+    res.json(updatePostAfterDelete);
+  } catch (error) {
+    next(createError(400, "Failed to Delete"));
+  }
+};
+
+const removeComment = (comments, commentId) => {
+  const newComments = comments.filter((comment) => {
+    if (comment._id.toString() === commentId) {
+      return false; // Filter out the comment to delete
+    } else {
+      comment.comments = removeComment(comment.comments, commentId); // Recurse
+      return true; // Keep the comment in the array
+    }
+  });
+
+  return newComments;
+};

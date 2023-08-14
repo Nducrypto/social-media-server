@@ -1,24 +1,26 @@
 import express from "express";
 
 import {
-  getPosts,
-  getPostsBySearch,
-  createPost,
-  updatePost,
-  likePost,
-  commentPost,
-  deletePost,
+  GetPosts,
+  GetPostsBySearch,
+  CreatePost,
+  UpdatePost,
+  LikePost,
+  CommentPost,
+  DeletePost,
+  DeleteComment,
 } from "../controllers/posts.js";
 
 const router = express.Router();
 import { verifyUser } from "../middleware/auth.js";
 
-router.get("/search", getPostsBySearch);
-router.get("/", getPosts);
-router.post("/", verifyUser, createPost);
-router.patch("/:id", verifyUser, updatePost);
-router.delete("/:id", verifyUser, deletePost);
-router.patch("/likePost/:id", verifyUser, likePost);
-router.post("/:id/commentPost", commentPost);
+router.get("/search", GetPostsBySearch);
+router.get("/", GetPosts);
+router.post("/", verifyUser, CreatePost);
+router.patch("/:id", verifyUser, UpdatePost);
+router.delete("/:id", verifyUser, DeletePost);
+router.patch("/likePost/:id", verifyUser, LikePost);
+router.post("/:id/commentPost", verifyUser, CommentPost);
+router.post("/deleteComment/:id", DeleteComment);
 
 export default router;

@@ -1,58 +1,28 @@
 import mongoose from "mongoose";
 
-// const replySchema = mongoose.Schema(
-//   {
-//     text: { type: String },
-//     author: { type: String },
-//   },
-//   { timestamps: true }
-// );
-
-// const commentSchema = mongoose.Schema(
-//   {
-//     text: { type: String },
-//     author: { type: String },
-//     parentComment: { type: mongoose.Schema.Types.ObjectId, ref: "Comment" },
-//     replies: [replySchema],
-//   },
-//   { timestamps: true }
-// );
+const commentSchema = mongoose.Schema(
+  {
+    text: { type: String },
+    userName: { type: String },
+    comments: [],
+  },
+  { timestamps: true }
+);
 
 const postSchema = mongoose.Schema(
   {
-    message: { type: String, min: 3, max: 150 },
+    message: { type: String, min: 2 },
     firstName: String,
     lastName: String,
     creator: String,
     selectedFile: String,
     profilePics: String,
     likes: { type: [String], default: [] },
-    comments: [
-      {
-        text: { type: String },
-        author: { type: String },
-        parentComment: { type: mongoose.Schema.Types.ObjectId, ref: "Comment" },
-        replies: [
-          {
-            text: { type: String },
-            author: { type: String },
-            subReply: [],
-          },
-          { timestamps: true },
-        ],
-      },
-      { timestamps: true },
-    ],
-    // comments: [commentSchema],
+    comments: [commentSchema],
   },
   { timestamps: true }
 );
-
-// const Comment = mongoose.model("Comment", commentSchema);
-
-// const ReplyComment = mongoose.model("ReplyComment", replySchema);
-
+const Comment = mongoose.model("Comment", commentSchema);
 const SocialMediaNew = mongoose.model("SocialMediaNew", postSchema);
 
-export { SocialMediaNew };
-// export { SocialMediaNew, Comment, ReplyComment };
+export { SocialMediaNew, Comment };

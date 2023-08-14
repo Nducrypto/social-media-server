@@ -5,15 +5,29 @@ import mongoose from "mongoose";
 import UserSocialMedia from "../models/user.js";
 import { SocialMediaNew } from "../models/postMessage.js";
 import dotenv from "dotenv";
+import { v2 as cloudinary } from "cloudinary";
+
 import { createError } from "../error/error.js";
 import { mergeSort } from "../sorting/sorting.js";
 
 dotenv.config();
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+function generateToken(user) {
+  return jwt.sign(
+    { isAdmin: user.isAdmin, id: user._id, isSuspended: user.isSuspended },
+    process.env.JWT_SECRET,
+    { expiresIn: "1y" }
+  );
+}
 
 // SIGNUP
 export const signup = async (req, res, next) => {
-  const { email, password, firstName, lastName, confirmPassword, profilePics } =
-    req.body;
+  const { email, password, firstName, lastName, confirmPassword } = req.body;
 
   try {
     const existingUser = await UserSocialMedia.findOne({ email });
@@ -22,28 +36,13 @@ export const signup = async (req, res, next) => {
     if (password !== confirmPassword)
       return next(createError(404, "Password Don't Match."));
 
-    // let hashedPassword = await bcrypt.hash(req.body.password, 10);
-
     const result = await UserSocialMedia.create({
       email,
       password,
       firstName,
       lastName,
-      profilePics,
     });
-
-    const token = jwt.sign(
-      {
-        id: result._id,
-        isAdmin: result.isAdmin,
-        isSuspended: result.isSuspended,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "1y",
-      }
-    );
-
+    const token = generateToken(result);
     res.status(200).json({ result, token });
   } catch (error) {
     next(createError(404, "Something went wrong"));
@@ -63,23 +62,10 @@ export const signin = async (req, res, next) => {
       req.body.password.toString(),
       user.password
     );
-
     if (!checkIfPasswordIsCorrect)
       return next(createError(404, "Invalid Email or Password."));
-
-    const token = jwt.sign(
-      {
-        isAdmin: user.isAdmin,
-        id: user._id,
-        isSuspended: user.isSuspended,
-      },
-      process.env.JWT_SECRET,
-
-      { expiresIn: "1y" }
-    );
-
+    const token = generateToken(user);
     const { password, ...otherDetails } = user._doc;
-
     res.status(200).json({ result: { ...otherDetails }, token });
   } catch (err) {
     next(createError(404, "Something went wrong"));
@@ -99,7 +85,10 @@ export const getUsers = async (req, res, next) => {
 // ======GET_BY_ID
 export const getUserById = async (req, res, next) => {
   try {
-    const user = await UserSocialMedia.findById({ _id: req.params.id });
+    if (!req.params.id) {
+      return next(createError(400, "No id Sent"));
+    }
+    const user = await UserSocialMedia.findById(req.params.id);
 
     res.status(200).json(user);
   } catch (err) {
@@ -121,47 +110,95 @@ export const updateUser = async (req, res, next) => {
       isSuspended,
     } = req.body;
 
-    // Find the user and handle user not found
     const user = await UserSocialMedia.findById(id);
     if (!user) {
       return next(createError(404, "User not found"));
     }
 
-    // Update the user object
-    user.email = email || user.email;
-    user.firstName = firstName || user.firstName;
-    user.lastName = lastName || user.lastName;
-    user.profilePics = profilePics || user.profilePics;
-    user.bio = bio || user.bio;
-    user.isAdmin = isAdmin || user.isAdmin;
-    user.isSuspended = isSuspended || user.isSuspended;
+    if (profilePics) {
+      const saveImageToCloudinary = await updateProfilePicture(profilePics);
+      await deleteInitialProfilePicture(user.profilePics);
+      user.profilePics = saveImageToCloudinary;
+    }
 
-    const updateUser = await user.save();
+    await updateUserObject(
+      user,
+      email,
+      firstName,
+      lastName,
+      bio,
+      isAdmin,
+      isSuspended
+    );
+    const updatedUser = await user.save();
 
-    const token = jwt.sign(
-      { isAdmin: user.isAdmin, id: user._id },
-      process.env.JWT_SECRET,
+    const token = generateToken(updatedUser);
 
-      { expiresIn: "1y" }
+    await updateUserInformationInPosts(
+      id,
+      user.profilePics,
+      firstName,
+      lastName
     );
 
-    // UPDATING PROFILE INFO FOR ALL POST MADE BY THE CREATOR
-    const posts = await SocialMediaNew.updateMany(
-      { creator: id },
-      {
-        $set: {
-          firstName: req.body.firstName || user.firstName,
-          lastName: req.body.lastName || user.lastName,
-          profilePics: req.body.profilePics || user.profilePics,
-        },
-      },
-      { new: true }
-    );
-    res.status(200).json({ result: updateUser, token });
+    res.status(200).json({ result: updatedUser, token });
   } catch (err) {
-    next(createError(401, "failed to update"));
+    next(createError(401, "Failed to update"));
   }
 };
+
+// Helper function to update profile picture and return URL
+async function updateProfilePicture(profilePics) {
+  const profilePicsUrl = await cloudinary.uploader.upload(profilePics);
+  return profilePicsUrl.url;
+}
+
+// Helper function to delete initial profile picture from Cloudinary
+async function deleteInitialProfilePicture(initialProfilePics) {
+  if (initialProfilePics) {
+    const publicId = initialProfilePics.split("/").pop().split(".")[0];
+    await cloudinary.uploader.destroy(publicId); // Return the promise
+  }
+}
+
+// Helper function to update user object fields
+function updateUserObject(
+  user,
+  email,
+  firstName,
+  lastName,
+  bio,
+  isAdmin,
+  isSuspended
+) {
+  Object.assign(user, {
+    email: email || user.email,
+    firstName: firstName || user.firstName,
+    lastName: lastName || user.lastName,
+    bio: bio || user.bio,
+    isAdmin: isAdmin || user.isAdmin,
+    isSuspended: isSuspended || user.isSuspended,
+  });
+}
+
+async function updateUserInformationInPosts(
+  userId,
+  newProfilePicsUrl,
+  firstName,
+  lastName
+) {
+  await SocialMediaNew.updateMany(
+    { creator: userId },
+    {
+      $set: {
+        firstName: firstName || user.firstName,
+        lastName: lastName || user.lastName,
+        profilePics: newProfilePicsUrl,
+      },
+    },
+    { new: true }
+  );
+}
 
 export const updateUserAccess = async (req, res, next) => {
   try {
@@ -255,26 +292,7 @@ export const followers = async (req, res, next) => {
     //  import mergeSort from sorting.js
     const sortedFollowers = mergeSort(followersIds);
 
-    // Implement binary search
-    const binarySearch = () => {
-      let left = 0;
-      let right = sortedFollowers.length - 1;
-
-      while (left <= right) {
-        const mid = Math.floor((left + right) / 2);
-        if (
-          sortedFollowers[mid].toString() === req.body.followerId.toString()
-        ) {
-          return mid; // Return the index of the target
-        } else if (sortedFollowers[mid] < req.body.followerId) {
-          left = mid + 1;
-        } else {
-          right = mid - 1;
-        }
-      }
-      return -1; // Return -1 if the target is not found
-    };
-    const index = binarySearch();
+    const index = binarySearch(sortedFollowers, req.body.followerId);
 
     if (index === -1) {
       user.followers.push(req.body.followerId);
@@ -289,4 +307,20 @@ export const followers = async (req, res, next) => {
   }
 };
 
+const binarySearch = (sortedFollowers, followerId) => {
+  let left = 0;
+  let right = sortedFollowers.length - 1;
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    if (sortedFollowers[mid].toString() === followerId) {
+      return mid; // Return the index of the target
+    } else if (sortedFollowers[mid] < followerId) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  return -1; // Return -1 if the target is not found
+};
 // =====RESET_PASSWORD
