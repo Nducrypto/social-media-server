@@ -44,10 +44,10 @@ export const CreatePost = async (req, res, next) => {
     const postPhotoUrl = selectedFile
       ? await cloudinary.uploader.upload(selectedFile)
       : null;
-
+    console.log(postPhotoUrl);
     const newPost = await SocialMediaNew.create({
       message,
-      selectedFile: postPhotoUrl.url ?? null,
+      selectedFile: postPhotoUrl ?? null,
       profilePics: user.profilePics ?? null,
       firstName,
       lastName,
