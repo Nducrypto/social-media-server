@@ -4,6 +4,8 @@ const commentSchema = mongoose.Schema(
   {
     text: { type: String },
     userName: { type: String },
+    userId: { type: String },
+    isAdmin: { type: Boolean },
     comments: [],
   },
   { timestamps: true }
@@ -19,9 +21,11 @@ const postSchema = mongoose.Schema(
     profilePics: String,
     likes: { type: [String], default: [] },
     comments: [commentSchema],
+    isAdmin: { type: Boolean },
   },
   { timestamps: true }
 );
+
 const Comment = mongoose.model("Comment", commentSchema);
 const SocialMediaNew = mongoose.model("SocialMediaNew", postSchema);
 

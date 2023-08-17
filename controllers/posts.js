@@ -12,6 +12,7 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
 //=====GETPOSTs
 export const GetPosts = async (req, res, next) => {
   const { page } = req.query;
@@ -37,23 +38,25 @@ export const GetPosts = async (req, res, next) => {
 
 // ==================== CREATEPOST
 export const CreatePost = async (req, res, next) => {
-  const { message, selectedFile, firstName, lastName, creator } = req.body;
+  const { message, selectedFile, creator } = req.body;
 
   try {
-    const user = await UserSocialMedia.findById(creator);
-    const postPhotoUrl = selectedFile
-      ? await cloudinary.uploader.upload(selectedFile)
-      : null;
-    console.log(postPhotoUrl);
-    const newPost = await SocialMediaNew.create({
+    let postPhotoUrl = "";
+    if (selectedFile) {
+      const postPhotoResult = await cloudinary.uploader.upload(selectedFile);
+      postPhotoUrl = postPhotoResult.url;
+    }
+    const fetchUser = await UserSocialMedia.findById(creator);
+    const newPost = new SocialMediaNew({
       message,
-      selectedFile: postPhotoUrl ?? null,
-      profilePics: user.profilePics ?? null,
-      firstName,
-      lastName,
+      selectedFile: postPhotoUrl,
+      profilePics: fetchUser.profilePics,
+      firstName: fetchUser.firstName,
+      lastName: fetchUser.lastName,
       creator,
+      isAdmin: fetchUser.isAdmin,
     });
-
+    await newPost.save();
     res.status(201).json(newPost);
   } catch (err) {
     next(createError(400, "Failed to create post"));
@@ -79,7 +82,7 @@ export const DeletePost = async (req, res, next) => {
   res.json({ message: "Post deleted successfully." });
 };
 
-//=================== LIKEPOST
+//  =========LIKEPOST===
 export const LikePost = async (req, res, next) => {
   const { id } = req.params;
   const { userId } = req.body;
@@ -90,23 +93,57 @@ export const LikePost = async (req, res, next) => {
     }
 
     const post = await SocialMediaNew.findById(id);
-    const index = post.likes.indexOf(userId);
 
-    if (index === -1) {
-      post.likes.push(userId);
+    if (post.likes.includes(userId)) {
+      await SocialMediaNew.findByIdAndUpdate(
+        id,
+        { $pull: { likes: userId } },
+        { new: true }
+      );
+
+      res.status(200).json(post);
     } else {
-      post.likes.splice(index, 1);
+      const updatedPost = await SocialMediaNew.findByIdAndUpdate(
+        id,
+        { $push: { likes: userId } },
+        { new: true }
+      );
+
+      res.status(200).json(updatedPost);
     }
-
-    const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
-      new: true,
-    });
-
-    res.status(200).json(updatedPost);
   } catch (err) {
-    next(createError(400, "Failed to get post by creator"));
+    next(createError(400, "Failed to update post likes"));
   }
 };
+
+//=================== LIKEPOST
+// export const LikePost = async (req, res, next) => {
+//   const { id } = req.params;
+//   const { userId } = req.body;
+
+//   try {
+//     if (!userId) {
+//       return next(createError(400, "Unauthenticated"));
+//     }
+
+//     const post = await SocialMediaNew.findById(id);
+//     const index = post.likes.indexOf(userId);
+
+//     if (index === -1) {
+//       post.likes.push(userId);
+//     } else {
+//       post.likes.splice(index, 1);
+//     }
+
+//     const updatedPost = await SocialMediaNew.findByIdAndUpdate(id, post, {
+//       new: true,
+//     });
+
+//     res.status(200).json(updatedPost);
+//   } catch (err) {
+//     next(createError(400, "Failed to get post by creator"));
+//   }
+// };
 
 // ===========================UPDATEPOST
 export const UpdatePost = async (req, res, next) => {
@@ -159,74 +196,75 @@ export const GetPostsBySearch = async (req, res, next) => {
 };
 
 // commentPost function using mongoDb method
-export const comment = async (req, res) => {
-  const { id } = req.params;
-  const {
-    firstName,
-    lastName,
-    comment,
-    parentCommentId,
-    parentReplyId,
-    // currentDepth = 0,
-  } = req.body;
-  try {
-    if (!req.body) {
-      next(createError(400, "Please make a cooment"));
-    }
-    const post = await SocialMediaNew.findById(id);
+// export const comment = async (req, res) => {
+//   const { id } = req.params;
+//   const {
+//     firstName,
+//     lastName,
+//     comment,
+//     parentCommentId,
+//     parentReplyId,
+//     // currentDepth = 0,
+//   } = req.body;
+//   try {
+//     if (!req.body) {
+//       next(createError(400, "Please make a cooment"));
+//     }
+//     const post = await SocialMediaNew.findById(id);
 
-    if (parentCommentId) {
-      const parentComment = post.comments.id(parentCommentId);
+//     if (parentCommentId) {
+//       const parentComment = post.comments.id(parentCommentId);
 
-      if (!parentComment) {
-        next(createError(400, "Parent comment not found"));
-      }
+//       if (!parentComment) {
+//         next(createError(400, "Parent comment not found"));
+//       }
 
-      if (parentReplyId) {
-        const parentReply = parentComment.replies.id(parentReplyId);
+//       if (parentReplyId) {
+//         const parentReply = parentComment.replies.id(parentReplyId);
 
-        if (!parentReply) {
-          next(createError(400, "Parent reply not found"));
-        }
+//         if (!parentReply) {
+//           next(createError(400, "Parent reply not found"));
+//         }
 
-        // Add the sub-reply to the parent reply's subReplies array
-        parentReply.subReply.push({
-          text: comment,
-          author: `${firstName} ${lastName}`,
-        });
-        await post.save();
-      } else {
-        // If no parentReplyId, add the reply to the parent comment
-        parentComment.replies.push({
-          text: comment,
-          author: `${firstName} ${lastName}`,
-          subReply: [], // Initialize the subReply array
-        });
-        await post.save();
-      }
-    } else {
-      const newComment = {
-        text: comment,
-        author: `${firstName} ${lastName}`,
-        parentComment: parentCommentId || null,
-      };
+//         // Add the sub-reply to the parent reply's subReplies array
+//         parentReply.subReply.push({
+//           text: comment,
+//           author: `${firstName} ${lastName}`,
+//         });
+//         await post.save();
+//       } else {
+//         // If no parentReplyId, add the reply to the parent comment
+//         parentComment.replies.push({
+//           text: comment,
+//           author: `${firstName} ${lastName}`,
+//           subReply: [], // Initialize the subReply array
+//         });
+//         await post.save();
+//       }
+//     } else {
+//       const newComment = {
+//         text: comment,
+//         author: `${firstName} ${lastName}`,
+//         parentComment: parentCommentId || null,
+//       };
 
-      post.comments.push(newComment);
-      await post.save();
-    }
+//       post.comments.push(newComment);
+//       await post.save();
+//     }
 
-    // Save the changes to the post after adding the sub-reply
+// Save the changes to the post after adding the sub-reply
 
-    const updatedPost = await SocialMediaNew.findById(id);
-    res.json(updatedPost);
-  } catch (error) {
-    res.status(500).json({ message: "Something went wrong" });
-  }
-};
+//     const updatedPost = await SocialMediaNew.findById(id);
+//     res.json(updatedPost);
+//   } catch (error) {
+//     res.status(500).json({ message: "Something went wrong" });
+//   }
+// };
 
 export const CommentPost = async (req, res, next) => {
   const { id } = req.params;
-  const { firstName, lastName, comment, parentCommentId } = req.body;
+  const { firstName, isAdmin, userId, lastName, comment, parentCommentId } =
+    req.body;
 
   try {
     if (!req.body) {
@@ -241,11 +279,13 @@ export const CommentPost = async (req, res, next) => {
     const newComment = new Comment({
       text: comment,
       userName: `${firstName} ${lastName}`,
+      userId,
+      isAdmin,
       comments: [],
     });
 
     if (parentCommentId) {
-      const commentUpdated = await updateCommentRecursively(
+      const commentUpdated = updateCommentRecursively(
         post.comments,
         parentCommentId,
         newComment
