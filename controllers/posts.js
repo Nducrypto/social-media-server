@@ -156,7 +156,9 @@ export const LikePost = async (req, res, next) => {
       new: true,
     });
 
-    res.status(200).json(updatedPost);
+    io.emit("like-post", updatedPost);
+
+    // res.status(200).json(updatedPost);
   } catch (err) {
     next(createError(400, "Failed to update post likes"));
   }

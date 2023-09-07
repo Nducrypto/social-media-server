@@ -26,17 +26,14 @@ const io = new Server(server, {
     credentials: true,
   },
 });
-io.on("connection", (socket) => {
-  console.log("A client connected");
-
-  socket.on("disconnect", () => {
-    console.log("A client disconnected");
-  });
-});
 
 app.use("/api/posts", postRoutes);
 app.use("/api/users", userRoutes);
 // app.use("/migration", migration);
+
+io.on("connection", (socket) => {
+  socket.on("disconnect", () => {});
+});
 
 export { io };
 
