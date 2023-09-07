@@ -3,21 +3,42 @@ import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-
+import { createServer } from "http";
+import { Server } from "socket.io";
 import postRoutes from "./routes/posts.js";
 import userRoutes from "./routes/user.js";
 // import migration from "./routes/migration.js";
 
 const app = express();
 dotenv.config();
+const server = createServer(app);
 
 app.use(bodyParser.json({ limit: "30mb", extended: true }));
 app.use(bodyParser.urlencoded({ limit: "30mb", extended: true }));
+
 app.use(cors());
+// const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.SOCKET_ORIGIN_URL,
+    methods: process.env.SOCKET_METHODS,
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  },
+});
+io.on("connection", (socket) => {
+  console.log("A client connected");
+
+  socket.on("disconnect", () => {
+    console.log("A client disconnected");
+  });
+});
 
 app.use("/api/posts", postRoutes);
 app.use("/api/users", userRoutes);
 // app.use("/migration", migration);
+
+export { io };
 
 app.use((err, req, res, next) => {
   const errorStatus = err.status || 500;
@@ -31,14 +52,17 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
-mongoose
-  .connect(process.env.CONNECTION_URL, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then((req, res) =>
-    app.listen(PORT, () => console.log(`Server Running on Port:${PORT}`))
-  )
-  .catch((error) => console.log(`${error} did not connect`));
+const connect = async () => {
+  try {
+    await mongoose.connect(process.env.CONNECTION_URL);
+    console.log("connected to mongodb");
+  } catch (error) {
+    throw error;
+  }
+};
+
+server.listen(PORT, () => {
+  connect();
+});

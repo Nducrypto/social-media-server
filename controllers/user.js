@@ -290,7 +290,9 @@ export const followers = async (req, res, next) => {
       mongoose.Types.ObjectId(id)
     );
     //  import mergeSort from sorting.js
-    const sortedFollowers = mergeSort(followersIds);
+    const sortedFollowers = mergeSort(followersIds, (a, b) => {
+      return a - b;
+    });
 
     const index = binarySearch(sortedFollowers, req.body.followerId);
 
